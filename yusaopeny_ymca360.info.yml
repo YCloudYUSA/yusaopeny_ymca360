@@ -2,7 +2,7 @@ name: 'YMCA360 Integration'
 type: module
 description: 'Integration with YMCA360 Platform'
 package: 'YMCA'
-core_version_requirement: ^11
+core_version_requirement: ^10 | ^11
 dependencies:
   - drupal:openy_node_activity
   - drupal:openy_node_category
