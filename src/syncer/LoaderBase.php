@@ -295,11 +295,22 @@ abstract class LoaderBase implements LoaderInterface {
 
   /**
    * Applies publish state to a session according to upstream data + config.
+   *
+   * When Content Moderation governs the session bundle, setPublished() alone
+   * is not enough — the moderation_state field controls the final revision
+   * status and must be set explicitly, otherwise nodes are always saved as
+   * 'draft' regardless of the published flag.
    */
   protected function applyPublishState(NodeInterface $session, array $item): void {
-    $session->setUnpublished();
-    if ($this->isPublishedSession($item)) {
+    $publish = $this->isPublishedSession($item);
+    if ($publish) {
       $session->setPublished();
+    }
+    else {
+      $session->setUnpublished();
+    }
+    if ($session->hasField('moderation_state')) {
+      $session->set('moderation_state', $publish ? 'published' : 'draft');
     }
   }
 
