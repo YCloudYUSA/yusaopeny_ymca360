@@ -2,6 +2,7 @@ cron:
   enable_cron: 0
 sync:
   window_days: 14
+  window_offset_days: 1
   page_size: 500
   max_deletes_per_run: 500
   canceled_title_prefix: 'CANCELED: '
