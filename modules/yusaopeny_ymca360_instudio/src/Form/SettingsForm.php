@@ -58,6 +58,15 @@ class SettingsForm extends ConfigFormBase {
       '#max' => 365,
       '#step' => 1,
     ];
+    $form['sync']['window_offset_days'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Past days (window offset)'),
+      '#description' => $this->t('How many days <em>before</em> today to include in the sync window. Keeps occurrences that already started but have not yet ended (e.g. an Open Swim 5am–5pm shown at 11am) from being reconciled away. Set to 0 to drop any occurrence the moment it starts. Increase if you run multi-day occurrences.'),
+      '#default_value' => $config->get('sync.window_offset_days') ?? 1,
+      '#min' => 0,
+      '#max' => 30,
+      '#step' => 1,
+    ];
     $form['sync']['page_size'] = [
       '#type' => 'number',
       '#title' => $this->t('API page size'),
