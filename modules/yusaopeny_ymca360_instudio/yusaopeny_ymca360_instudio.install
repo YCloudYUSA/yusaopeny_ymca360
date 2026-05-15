@@ -117,3 +117,15 @@ function yusaopeny_ymca360_instudio_update_10001(): string {
   }
   return 'Added settings: ' . implode(', ', $added) . '.';
 }
+
+/**
+ * Add sync.window_offset_days so in-progress occurrences stay in the window.
+ */
+function yusaopeny_ymca360_instudio_update_10003(): string {
+  $config = \Drupal::configFactory()->getEditable('yusaopeny_ymca360_instudio.settings');
+  if ($config->get('sync.window_offset_days') !== NULL) {
+    return 'sync.window_offset_days already set — nothing to do.';
+  }
+  $config->set('sync.window_offset_days', 1)->save();
+  return 'Added sync.window_offset_days = 1.';
+}

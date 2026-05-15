@@ -74,13 +74,19 @@ class Extractor extends ExtractorBase implements ExtractorInterface {
   /**
    * Resolves the current sync window from config.
    *
+   * The window starts `window_offset_days` before "now" so that occurrences
+   * which already started but have not yet ended (e.g. a 5am–5pm Open Swim at
+   * 11am) remain inside the window — otherwise the API's `scheduled_from`
+   * filter hides them and the reconciliation step deletes their mappings.
+   *
    * @return array{from: int, to: int}
    */
   protected function resolveSyncWindow($instudio): array {
     $windowDays = (int) ($instudio->get('sync.window_days') ?? 14);
+    $offsetDays = (int) ($instudio->get('sync.window_offset_days') ?? 1);
     $now = time();
     return [
-      'from' => $now,
+      'from' => $now - ($offsetDays * 86400),
       'to' => $now + ($windowDays * 86400),
     ];
   }

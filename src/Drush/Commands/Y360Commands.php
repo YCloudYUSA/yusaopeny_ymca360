@@ -78,7 +78,8 @@ final class Y360Commands extends DrushCommands {
     $now = \Drupal::time()->getRequestTime();
     $instudio = \Drupal::config('yusaopeny_ymca360_instudio.settings');
     $windowDays = (int) ($instudio->get('sync.window_days') ?? 14);
-    $from = gmdate(DateTimeItemInterface::DATETIME_STORAGE_FORMAT, $now);
+    $offsetDays = (int) ($instudio->get('sync.window_offset_days') ?? 1);
+    $from = gmdate(DateTimeItemInterface::DATETIME_STORAGE_FORMAT, $now - $offsetDays * 86400);
     $to = gmdate(DateTimeItemInterface::DATETIME_STORAGE_FORMAT, $now + $windowDays * 86400);
 
     $total = (int) $this->database->query('SELECT COUNT(*) FROM {y360_mapping}')->fetchField();
