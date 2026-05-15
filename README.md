@@ -61,6 +61,7 @@ The submodule's install hook adds `yusaopeny_ymca360_instudio.syncer` to `ymca_s
 | Hook | Purpose |
 |---|---|
 | `yusaopeny_ymca360_instudio_update_10001` | Backfills the new sync settings (`window_days`, `page_size`, `max_deletes_per_run`, `canceled_title_prefix`, `canceled_publish_behavior`) when missing. |
+| `yusaopeny_ymca360_instudio_update_10003` | Backfills `sync.window_offset_days = 1` so already-started occurrences stay in the window. |
 | `yusaopeny_ymca360_instudio_update_10002` | Removes the syncer-owned bundles (`session`, `activity`, `class`, `program`, `program_subcategory`) from `trash.settings.enabled_entity_types.node` if Trash is enabled and tracks nodes. Other bundles the site has opted into Trash for are preserved. |
 
 </details>
@@ -88,7 +89,8 @@ The submodule's install hook adds `yusaopeny_ymca360_instudio.syncer` to `ymca_s
 
 | Setting | Default | Notes |
 |---|---|---|
-| `window_days` | `14` | How many days ahead of `now` to pull. Items before `now` are never extracted, so reconciliation removes them on the next run. |
+| `window_days` | `14` | How many days ahead of `now` to pull. Combined with `window_offset_days`, the extracted window is `[now - window_offset_days, now + window_days]`. |
+| `window_offset_days` | `1` | How many days *before* `now` to include. Keeps occurrences that already started but have not yet ended (e.g. an Open Swim 5am–5pm at 11am) inside the window so reconciliation does not delete them as orphans. Set to `0` to revert to the pre-2.x behaviour where any occurrence with `start_at < now` is dropped immediately. Increase if you run multi-day occurrences. |
 | `page_size` | `500` | Items per API page. Larger pages = fewer requests but more memory per request. |
 | `max_deletes_per_run` | `500` | Hard cap on deletions per sync cycle. Excess is logged and deferred to subsequent runs. Set to `0` to disable. |
 | `empty_extract_threshold` | `2` | How many consecutive empty extracts must occur before reconciliation runs against an empty set. Lower it to `1` to disable the circuit breaker. |
@@ -120,7 +122,7 @@ flowchart LR
     E -.->|circuit breaker streak| KV[(keyvalue)]
 ```
 
-- **Extractor** builds the `[now, now + window_days]` window and calls `Y360Client::getSchedulesWindowed()` with the API's native filters. Pagination is API-driven. Tracks consecutive empty extracts in the `yusaopeny_ymca360_syncer` keyvalue collection and toggles `DataWrapper::skipOrphanReconciliation` until emptiness is confirmed.
+- **Extractor** builds the `[now - window_offset_days, now + window_days]` window and calls `Y360Client::getSchedulesWindowed()` with the API's native filters. Pagination is API-driven. Tracks consecutive empty extracts in the `yusaopeny_ymca360_syncer` keyvalue collection and toggles `DataWrapper::skipOrphanReconciliation` until emptiness is confirmed.
 - **Transformer** classifies the working set:
   - `status=deleted` → existing mapping queued for delete.
   - hash matches existing mapping → no-op (unchanged item).
