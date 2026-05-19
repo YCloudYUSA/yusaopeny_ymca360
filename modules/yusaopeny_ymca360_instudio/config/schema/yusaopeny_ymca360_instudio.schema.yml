@@ -1,0 +1,38 @@
+# Schema for the configuration files of the YMCA360 InStudio submodule.
+
+yusaopeny_ymca360_instudio.settings:
+  type: config_object
+  label: 'YMCA360 InStudio settings'
+  mapping:
+    cron:
+      type: mapping
+      label: 'Automatic sync'
+      mapping:
+        enable_cron:
+          type: boolean
+          label: 'Enable sync on cron runs'
+    sync:
+      type: mapping
+      label: 'Sync window'
+      mapping:
+        window_days:
+          type: integer
+          label: 'Future days (window size)'
+        window_offset_days:
+          type: integer
+          label: 'Past days (window offset)'
+        page_size:
+          type: integer
+          label: 'API page size'
+        max_deletes_per_run:
+          type: integer
+          label: 'Max deletes per run'
+        empty_extract_threshold:
+          type: integer
+          label: 'Consecutive empty extract threshold before orphan reconciliation'
+        canceled_title_prefix:
+          type: string
+          label: 'Canceled session title prefix'
+        canceled_publish_behavior:
+          type: string
+          label: 'Canceled session publish behavior'
