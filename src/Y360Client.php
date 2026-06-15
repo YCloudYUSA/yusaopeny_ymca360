@@ -106,11 +106,10 @@ class Y360Client {
    *   items: flat list of schedule occurrences.
    *   stats: ['pages_fetched' => N, 'api_total' => N, 'window_items' => N].
    */
-  public function getSchedulesWindowed(int $fromTimestamp, int $toTimestamp, int $pageSize = 500): array {
+  public function getSchedulesWindowed(int $fromTimestamp, int $toTimestamp, int $pageSize = 500, int $maxToImportSize = 10000): array {
     $queryParams = $this->buildWindowedQuery($fromTimestamp, $toTimestamp, $pageSize);
 
     $items = [];
-    $totalPages = 1;
     $apiTotal = 0;
     $pagesFetched = 0;
 
@@ -118,7 +117,6 @@ class Y360Client {
       $data = $this->doRequest($queryParams);
       $pagesFetched++;
       if ($queryParams['page'] === 0) {
-        $totalPages = $data['summary']['total_pages'] ?? 1;
         $apiTotal = $data['summary']['total_items'] ?? count($data['items'] ?? []);
       }
 
@@ -130,7 +128,11 @@ class Y360Client {
 
       $queryParams['page']++;
       usleep(100000);
-    } while ($queryParams['page'] < $totalPages);
+      // Avoid importing large amounts of data.
+      if (!empty($items) && (count($items) >= $maxToImportSize)) {
+        break;
+      }
+    } while (count($pageItems) >= $pageSize);
 
     return [
       'items' => $items,

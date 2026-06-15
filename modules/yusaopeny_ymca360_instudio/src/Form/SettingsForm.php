@@ -76,6 +76,15 @@ class SettingsForm extends ConfigFormBase {
       '#max' => 1000,
       '#step' => 50,
     ];
+    $form['sync']['max_import_per_run'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Max amount to import per run'),
+      '#description' => $this->t('There is a hard limit on the amount of data imported per synchronization cycle.'),
+      '#default_value' => $config->get('sync.max_import_per_run') ?? 10000,
+      '#min' => 0,
+      '#max' => 20000,
+      '#step' => 10,
+    ];
     $form['sync']['max_deletes_per_run'] = [
       '#type' => 'number',
       '#title' => $this->t('Max deletes per run'),
