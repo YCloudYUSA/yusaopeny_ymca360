@@ -53,7 +53,10 @@ final class Y360Commands extends DrushCommands {
   /**
    * Runs the in-studio syncer once.
    *
-   * Convenience wrapper over `drush yn-sync yusaopeny_ymca360_instudio.syncer`.
+   * Extract and Transform run synchronously (fast API fetch + hash comparison),
+   * then the Load phase is processed via Drupal's Batch API so the full item
+   * set is handled in one pass with visible progress — replacing the 60-second
+   * cron slice that applies when the syncer is triggered via hook_cron.
    */
   #[CLI\Command(name: 'y360:sync', aliases: ['y360-sync'])]
   #[CLI\Option(name: 'syncer', description: 'Syncer service id to run.')]
@@ -61,7 +64,33 @@ final class Y360Commands extends DrushCommands {
   public function sync(array $options = ['syncer' => 'yusaopeny_ymca360_instudio.syncer']): void {
     $syncerId = $options['syncer'];
     $this->logger()->notice(dt('Running @syncer.', ['@syncer' => $syncerId]));
-    $this->syncerRunner->run($syncerId, 'proceed');
+
+    // Derive the extract/transform/load service IDs from the syncer ID.
+    // Convention: {module_prefix}.syncer → {module_prefix}.{step}
+    $prefix = preg_replace('/\.syncer$/', '', $syncerId);
+    $loaderServiceId = "{$prefix}.loader";
+
+    // Acquire the same lock SyncerRunner would use so concurrent cron/drush
+    // runs are still prevented.
+    $lock = \Drupal::lock();
+    if (!$lock->acquire($syncerId, 250.0)) {
+      $this->logger()->warning(dt('Syncer @name is already running.', ['@name' => $syncerId]));
+      return;
+    }
+
+    try {
+      \Drupal::service("{$prefix}.extractor")->extract();
+      \Drupal::service("{$prefix}.transformer")->transform();
+
+      /** @var \Drupal\yusaopeny_ymca360\syncer\LoaderBase $loader */
+      $loader = \Drupal::service($loaderServiceId);
+      batch_set($loader->buildBatch($loaderServiceId));
+      drush_backend_batch_process();
+    }
+    finally {
+      $lock->release($syncerId);
+    }
+
     $this->logger()->success(dt('Sync run finished. Check `drush ws --type=yusaopeny_ymca360_syncer` for details.'));
   }
 

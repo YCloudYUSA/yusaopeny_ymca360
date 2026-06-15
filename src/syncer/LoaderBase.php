@@ -112,17 +112,26 @@ abstract class LoaderBase implements LoaderInterface {
   /**
    * Processes items to be created.
    *
+   * Used by the cron path. The 60-second cap prevents a single cron run from
+   * monopolising PHP execution; remaining items are picked up on the next run.
+   * Use buildBatch() / drush_backend_batch_process() for a full single-pass run.
+   *
    * @throws \Drupal\Core\Entity\EntityStorageException
    */
   protected function createItems(): void {
     $items = $this->dataWrapper->getItemsToCreate();
-    $this->logger->info('[LOADER] There are %total objects to create', [
-      '%total' => count($items),
-    ]);
+    $total = count($items);
+    $this->logger->info('[LOADER] There are %total objects to create', ['%total' => $total]);
     $_start = microtime(TRUE);
+    $processed = 0;
     foreach ($items as $item) {
       $this->createSession($item);
+      $processed++;
       if (microtime(true) - $_start > 60) {
+        $this->logger->notice('[LOADER] Time limit reached during create. Processed %done of %total; remainder queued for next run.', [
+          '%done' => $processed,
+          '%total' => $total,
+        ]);
         break;
       }
     }
@@ -135,13 +144,18 @@ abstract class LoaderBase implements LoaderInterface {
    */
   protected function updateItems(): void {
     $items = $this->dataWrapper->getItemsToUpdate();
-    $this->logger->info('[LOADER] There are %total objects to update', [
-      '%total' => count($items),
-    ]);
+    $total = count($items);
+    $this->logger->info('[LOADER] There are %total objects to update', ['%total' => $total]);
     $_start = microtime(TRUE);
+    $processed = 0;
     foreach ($items as $mapping_id => $item) {
       $this->updateSession($mapping_id, $item);
+      $processed++;
       if (microtime(true) - $_start > 60) {
+        $this->logger->notice('[LOADER] Time limit reached during update. Processed %done of %total; remainder queued for next run.', [
+          '%done' => $processed,
+          '%total' => $total,
+        ]);
         break;
       }
     }
@@ -154,14 +168,19 @@ abstract class LoaderBase implements LoaderInterface {
    */
   protected function deleteItems(): void {
     $items = $this->dataWrapper->getItemsToDelete();
-    $this->logger->info('[LOADER] There are %total objects to delete', [
-      '%total' => count($items),
-    ]);
-    $this->runWithoutTrash(function () use ($items) {
+    $total = count($items);
+    $this->logger->info('[LOADER] There are %total objects to delete', ['%total' => $total]);
+    $this->runWithoutTrash(function () use ($items, $total) {
       $_start = microtime(TRUE);
+      $processed = 0;
       foreach ($items as $item_id) {
         $this->deleteSession($item_id);
+        $processed++;
         if (microtime(true) - $_start > 60) {
+          $this->logger->notice('[LOADER] Time limit reached during delete. Processed %done of %total; remainder queued for next run.', [
+            '%done' => $processed,
+            '%total' => $total,
+          ]);
           break;
         }
       }
@@ -169,7 +188,162 @@ abstract class LoaderBase implements LoaderInterface {
   }
 
   /**
-   * Runs a callback with the Trash module bypassed.
+   * Creates a single session — public entry point for batch callbacks.
+   *
+   * @throws \Drupal\Core\Entity\EntityStorageException
+   */
+  public function processCreateItem(array $item): void {
+    $this->createSession($item);
+  }
+
+  /**
+   * Updates a single session — public entry point for batch callbacks.
+   *
+   * @throws \Drupal\Core\Entity\EntityStorageException
+   */
+  public function processUpdateItem(int $mappingId, array $item): void {
+    $this->updateSession($mappingId, $item);
+  }
+
+  /**
+   * Deletes a single session — public entry point for batch callbacks.
+   *
+   * Wraps runWithoutTrash() so soft-delete is bypassed for reconciliation.
+   *
+   * @throws \Drupal\Core\Entity\EntityStorageException
+   */
+  public function processDeleteItem(int $mappingId): void {
+    $this->runWithoutTrash(function () use ($mappingId) {
+      $this->deleteSession($mappingId);
+    });
+  }
+
+  /**
+   * Builds a Drupal Batch API definition for the full load phase.
+   *
+   * Intended for use by Drush commands that want to process all items in one
+   * invocation with visible progress, rather than the 60-second cron slices.
+   * After calling this, pass the result to batch_set() and then call
+   * drush_backend_batch_process().
+   *
+   * @param string $loaderServiceId
+   *   The Drupal service ID of this loader (e.g.
+   *   'yusaopeny_ymca360_instudio.loader'). Passed into each batch operation
+   *   so the static callback can retrieve the correct loader from the
+   *   container.
+   * @param int $chunkSize
+   *   Number of items per batch operation. Defaults to 50.
+   *
+   * @return array
+   *   A batch definition suitable for batch_set().
+   */
+  public function buildBatch(string $loaderServiceId, int $chunkSize = 50): array {
+    $batch = [
+      'operations' => [],
+      'finished' => [static::class, 'batchFinished'],
+      'title' => t('Syncing YMCA360 schedules'),
+      'init_message' => t('Initialising…'),
+      'progress_message' => t('Processing @current of @total operations.'),
+      'error_message' => t('YMCA360 sync encountered errors. Check recent log messages.'),
+    ];
+
+    foreach (array_chunk($this->dataWrapper->getItemsToCreate(), $chunkSize) as $chunk) {
+      $batch['operations'][] = [[static::class, 'batchProcessChunk'], [$loaderServiceId, 'create', $chunk]];
+    }
+    foreach (array_chunk($this->dataWrapper->getItemsToUpdate(), $chunkSize, TRUE) as $chunk) {
+      $batch['operations'][] = [[static::class, 'batchProcessChunk'], [$loaderServiceId, 'update', $chunk]];
+    }
+    foreach (array_chunk($this->dataWrapper->getItemsToDelete(), $chunkSize) as $chunk) {
+      $batch['operations'][] = [[static::class, 'batchProcessChunk'], [$loaderServiceId, 'delete', $chunk]];
+    }
+
+    return $batch;
+  }
+
+  /**
+   * Batch operation callback — processes one chunk of items.
+   *
+   * Static so it can be serialised into the batch DB table.
+   *
+   * @param string $serviceId
+   *   Loader service ID.
+   * @param string $type
+   *   'create', 'update', or 'delete'.
+   * @param array $chunk
+   *   For 'create': flat array of item arrays.
+   *   For 'update': associative array keyed by mapping ID.
+   *   For 'delete': flat array of mapping IDs.
+   * @param array $context
+   *   Batch API context.
+   */
+  public static function batchProcessChunk(string $serviceId, string $type, array $chunk, array &$context): void {
+    /** @var static $loader */
+    $loader = \Drupal::service($serviceId);
+    $processed = 0;
+
+    switch ($type) {
+      case 'create':
+        foreach ($chunk as $item) {
+          $loader->processCreateItem($item);
+          $processed++;
+        }
+        break;
+
+      case 'update':
+        foreach ($chunk as $mappingId => $item) {
+          $loader->processUpdateItem((int) $mappingId, $item);
+          $processed++;
+        }
+        break;
+
+      case 'delete':
+        foreach ($chunk as $mappingId) {
+          $loader->processDeleteItem((int) $mappingId);
+          $processed++;
+        }
+        break;
+    }
+
+    $context['results'][$type] = ($context['results'][$type] ?? 0) + $processed;
+    $context['message'] = sprintf(
+      '[LOADER] %s: %d processed so far.',
+      ucfirst($type),
+      $context['results'][$type]
+    );
+
+    // Clear the entity static cache between chunks to prevent memory growth.
+    \Drupal::entityTypeManager()->getStorage('node')->resetCache();
+  }
+
+  /**
+   * Batch finished callback — logs totals to watchdog.
+   *
+   * @param bool $success
+   *   Whether all operations completed without error.
+   * @param array $results
+   *   Accumulated results from each operation.
+   * @param array $operations
+   *   Any unprocessed operations (non-empty only on failure).
+   */
+  public static function batchFinished(bool $success, array $results, array $operations): void {
+    $logger = \Drupal::logger('yusaopeny_ymca360_syncer');
+    if ($success) {
+      $logger->notice('[LOADER] Batch complete. Created: %c, Updated: %u, Deleted: %d.', [
+        '%c' => $results['create'] ?? 0,
+        '%u' => $results['update'] ?? 0,
+        '%d' => $results['delete'] ?? 0,
+      ]);
+    }
+    else {
+      $logger->error('[LOADER] Batch did not complete. Created: %c, Updated: %u, Deleted: %d. Check logs for errors.', [
+        '%c' => $results['create'] ?? 0,
+        '%u' => $results['update'] ?? 0,
+        '%d' => $results['delete'] ?? 0,
+      ]);
+    }
+  }
+
+
    *
    * Sync reconciliation removes occurrences that no longer exist upstream —
    * routing them through soft-delete would leave a growing trash backlog
