@@ -110,15 +110,17 @@ class Y360Client {
     $queryParams = $this->buildWindowedQuery($fromTimestamp, $toTimestamp, $pageSize);
 
     $items = [];
-    $totalPages = 1;
     $apiTotal = 0;
     $pagesFetched = 0;
 
+    // The YMCA360 API always returns total_pages=0 regardless of the true
+    // result set size, so we cannot rely on it. Instead we paginate until
+    // we receive a partial page (fewer items than requested), which signals
+    // the final page has been reached.
     do {
       $data = $this->doRequest($queryParams);
       $pagesFetched++;
       if ($queryParams['page'] === 0) {
-        $totalPages = $data['summary']['total_pages'] ?? 1;
         $apiTotal = $data['summary']['total_items'] ?? count($data['items'] ?? []);
       }
 
@@ -130,7 +132,7 @@ class Y360Client {
 
       $queryParams['page']++;
       usleep(100000);
-    } while ($queryParams['page'] < $totalPages);
+    } while (count($pageItems) >= $pageSize);
 
     return [
       'items' => $items,
