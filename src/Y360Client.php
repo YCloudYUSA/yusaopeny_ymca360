@@ -110,7 +110,6 @@ class Y360Client {
     $queryParams = $this->buildWindowedQuery($fromTimestamp, $toTimestamp, $pageSize);
 
     $items = [];
-    $apiTotal = 0;
     $pagesFetched = 0;
 
     // The YMCA360 API always returns total_pages=0 regardless of the true
@@ -120,9 +119,6 @@ class Y360Client {
     do {
       $data = $this->doRequest($queryParams);
       $pagesFetched++;
-      if ($queryParams['page'] === 0) {
-        $apiTotal = $data['summary']['total_items'] ?? count($data['items'] ?? []);
-      }
 
       $pageItems = $data['items'] ?? [];
       if (empty($pageItems)) {
@@ -138,7 +134,7 @@ class Y360Client {
       'items' => $items,
       'stats' => [
         'pages_fetched' => $pagesFetched,
-        'api_total' => $apiTotal,
+        'api_total' => count($items),
         'window_items' => count($items),
       ],
     ];
