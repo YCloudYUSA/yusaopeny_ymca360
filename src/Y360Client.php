@@ -203,7 +203,7 @@ class Y360Client {
     $options = array_merge([
       'headers' => ['Accept' => 'application/json'],
       'auth' => $this->getAuth(),
-      'timeout' => 120,
+      'timeout' => 60,
     ], $options);
 
     $queryString = $this->buildQueryString($params);
