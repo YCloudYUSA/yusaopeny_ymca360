@@ -130,6 +130,11 @@ class Y360Client {
       usleep(100000);
       // Avoid importing large amounts of data.
       if (!empty($items) && (count($items) >= $maxToImportSize)) {
+        $this->logger->warning('The maximum number of items: %number to import has been reached. 
+          To increase it, change the settings for the "Max amount to import" per run field on the: %page_path page.', [
+          '%number' => $maxToImportSize,
+          '%page_path' => '/admin/config/system/yusaopeny-ymca360/instudio-settings'
+        ]);
         break;
       }
     } while (count($pageItems) >= $pageSize);
