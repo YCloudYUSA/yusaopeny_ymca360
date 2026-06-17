@@ -14,6 +14,15 @@ use GuzzleHttp\Client;
 class Y360Client {
 
   /**
+   * Hard ceiling on pages fetched per windowed call.
+   *
+   * Page exhaustion is the normal stop condition; this only trips if the API
+   * stops paginating correctly and would otherwise loop indefinitely. A
+   * 31-day window is ~16 pages, so 1000 leaves ample headroom.
+   */
+  protected const MAX_PAGES = 1000;
+
+  /**
    * API endpoint URL.
    *
    * @var string
@@ -110,6 +119,7 @@ class Y360Client {
     $queryParams = $this->buildWindowedQuery($fromTimestamp, $toTimestamp, $pageSize);
 
     $items = [];
+    $seen = [];
     $pagesFetched = 0;
 
     // The YMCA360 API always returns total_pages=0 regardless of the true
@@ -124,11 +134,27 @@ class Y360Client {
       if (empty($pageItems)) {
         break;
       }
-      $items = array_merge($items, $pageItems);
+
+      // No-progress guard: a page that adds no new ids means the API is
+      // repeating pages instead of advancing — stop before it loops.
+      $newItems = $this->collectNewItems($pageItems, $seen);
+      if (empty($newItems)) {
+        $this->logger->warning('[Y360] Pagination returned no new items on page %page; stopping to avoid a loop.', [
+          '%page' => $queryParams['page'],
+        ]);
+        break;
+      }
+      $items = array_merge($items, $newItems);
 
       $queryParams['page']++;
       usleep(100000);
-    } while (count($pageItems) >= $pageSize);
+    } while (count($pageItems) >= $pageSize && $pagesFetched < self::MAX_PAGES);
+
+    if ($pagesFetched >= self::MAX_PAGES) {
+      $this->logger->warning('[Y360] Pagination hit the %max-page safety cap; result may be truncated.', [
+        '%max' => self::MAX_PAGES,
+      ]);
+    }
 
     return [
       'items' => $items,
@@ -138,6 +164,30 @@ class Y360Client {
         'window_items' => count($items),
       ],
     ];
+  }
+
+  /**
+   * Returns only items whose id has not been seen yet, marking them seen.
+   *
+   * @param array $pageItems
+   *   Items from the current page.
+   * @param array $seen
+   *   Set of already-collected ids keyed by id, updated by reference.
+   *
+   * @return array
+   *   Items new to this run.
+   */
+  protected function collectNewItems(array $pageItems, array &$seen): array {
+    $new = [];
+    foreach ($pageItems as $item) {
+      $id = $item['id'] ?? NULL;
+      if ($id === NULL || isset($seen[$id])) {
+        continue;
+      }
+      $seen[$id] = TRUE;
+      $new[] = $item;
+    }
+    return $new;
   }
 
   /**
