@@ -3,6 +3,7 @@ services:
     class: Drupal\yusaopeny_ymca360\Y360Client
     arguments:
       - '@http_client'
+      - '@yusaopeny_ymca360.data_wrapper'
       - '@config.factory'
       - '@logger.channel.yusaopeny_ymca360_syncer'
 

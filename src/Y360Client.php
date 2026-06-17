@@ -5,6 +5,7 @@ namespace Drupal\yusaopeny_ymca360;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Logger\LoggerChannelInterface;
+use Drupal\yusaopeny_ymca360\syncer\DataWrapper;
 use Exception;
 use GuzzleHttp\Client;
 
@@ -28,6 +29,13 @@ class Y360Client {
   protected Client $client;
 
   /**
+   * DataWrapper.
+   *
+   * @var \Drupal\yusaopeny_ymca360\syncer\DataWrapper
+   */
+  protected DataWrapper $dataWrapper;
+
+  /**
    * Module configuration.
    *
    * @var \Drupal\Core\Config\ImmutableConfig
@@ -41,8 +49,9 @@ class Y360Client {
    */
   public LoggerChannelInterface $logger;
 
-  public function __construct(Client $client, ConfigFactoryInterface $configFactory, LoggerChannelInterface $logger) {
+  public function __construct(Client $client, DataWrapper $data_wrapper, ConfigFactoryInterface $configFactory, LoggerChannelInterface $logger) {
     $this->client = $client;
+    $this->dataWrapper = $data_wrapper;
     $this->config = $configFactory->get('yusaopeny_ymca360.settings');
     $this->logger = $logger;
     $this->apiUrl = $this->config->get('api_url') ?: 'https://ymca360.org/api/external/v1/schedules';
@@ -106,11 +115,10 @@ class Y360Client {
    *   items: flat list of schedule occurrences.
    *   stats: ['pages_fetched' => N, 'api_total' => N, 'window_items' => N].
    */
-  public function getSchedulesWindowed(int $fromTimestamp, int $toTimestamp, int $pageSize = 500): array {
+  public function getSchedulesWindowed(int $fromTimestamp, int $toTimestamp, int $pageSize = 500, int $maxToImportSize = 10000): array {
     $queryParams = $this->buildWindowedQuery($fromTimestamp, $toTimestamp, $pageSize);
 
     $items = [];
-    $totalPages = 1;
     $apiTotal = 0;
     $pagesFetched = 0;
 
@@ -118,7 +126,6 @@ class Y360Client {
       $data = $this->doRequest($queryParams);
       $pagesFetched++;
       if ($queryParams['page'] === 0) {
-        $totalPages = $data['summary']['total_pages'] ?? 1;
         $apiTotal = $data['summary']['total_items'] ?? count($data['items'] ?? []);
       }
 
@@ -130,7 +137,18 @@ class Y360Client {
 
       $queryParams['page']++;
       usleep(100000);
-    } while ($queryParams['page'] < $totalPages);
+      // Avoid importing large amounts of data.
+      if (!empty($items) && (count($items) >= $maxToImportSize)) {
+        $this->dataWrapper->setSkipOrphanReconciliation(TRUE);
+        $this->logger->warning('Max import per run (%number) reached; skipping orphan reconciliation this run to avoid false deletes.', ['%number' => $maxToImportSize]);
+        $this->logger->warning('The maximum number of items: %number to import has been reached. 
+          To increase it, change the settings for the "Max amount to import" per run field on the: %page_path page.', [
+          '%number' => $maxToImportSize,
+          '%page_path' => '/admin/config/system/yusaopeny-ymca360/instudio-settings'
+        ]);
+        break;
+      }
+    } while (count($pageItems) >= $pageSize);
 
     return [
       'items' => $items,

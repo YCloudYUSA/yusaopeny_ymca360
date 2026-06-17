@@ -20,13 +20,14 @@ class Extractor extends ExtractorBase implements ExtractorInterface {
     $instudio = $this->configFactory->get('yusaopeny_ymca360_instudio.settings');
     $window = $this->resolveSyncWindow($instudio);
     $pageSize = (int) ($instudio->get('sync.page_size') ?? 500);
+    $maxToImportSize = (int) ($instudio->get('sync.max_import_per_run') ?? 10000);
 
     $this->logger->notice('[EXTRACTOR] Fetching YMCA360 schedules. Window %from → %to.', [
       '%from' => gmdate(\DateTimeInterface::ATOM, $window['from']),
       '%to' => gmdate(\DateTimeInterface::ATOM, $window['to']),
     ]);
 
-    $result = $this->client->getSchedulesWindowed($window['from'], $window['to'], $pageSize);
+    $result = $this->client->getSchedulesWindowed($window['from'], $window['to'], $pageSize, $maxToImportSize);
     $items = $result['items'] ?? [];
     $stats = $result['stats'] ?? [];
 
