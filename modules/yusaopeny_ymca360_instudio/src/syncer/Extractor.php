@@ -30,7 +30,7 @@ class Extractor extends ExtractorBase implements ExtractorInterface {
     $items = $result['items'] ?? [];
     $stats = $result['stats'] ?? [];
 
-    $this->logger->info('[EXTRACTOR] Window fetch: %pages pages, %total items returned by API.', [
+    $this->logger->info('[EXTRACTOR] Window fetch: %pages pages, %total items collected.', [
       '%pages' => $stats['pages_fetched'] ?? 0,
       '%total' => $stats['api_total'] ?? 0,
     ]);
