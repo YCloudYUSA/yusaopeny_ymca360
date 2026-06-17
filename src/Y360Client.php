@@ -5,6 +5,7 @@ namespace Drupal\yusaopeny_ymca360;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Logger\LoggerChannelInterface;
+use Drupal\yusaopeny_ymca360\syncer\DataWrapper;
 use Exception;
 use GuzzleHttp\Client;
 
@@ -28,6 +29,13 @@ class Y360Client {
   protected Client $client;
 
   /**
+   * DataWrapper.
+   *
+   * @var \Drupal\yusaopeny_ymca360\syncer\DataWrapper
+   */
+  protected DataWrapper $dataWrapper;
+
+  /**
    * Module configuration.
    *
    * @var \Drupal\Core\Config\ImmutableConfig
@@ -41,8 +49,9 @@ class Y360Client {
    */
   public LoggerChannelInterface $logger;
 
-  public function __construct(Client $client, ConfigFactoryInterface $configFactory, LoggerChannelInterface $logger) {
+  public function __construct(Client $client, DataWrapper $data_wrapper, ConfigFactoryInterface $configFactory, LoggerChannelInterface $logger) {
     $this->client = $client;
+    $this->dataWrapper = $data_wrapper;
     $this->config = $configFactory->get('yusaopeny_ymca360.settings');
     $this->logger = $logger;
     $this->apiUrl = $this->config->get('api_url') ?: 'https://ymca360.org/api/external/v1/schedules';
@@ -130,6 +139,8 @@ class Y360Client {
       usleep(100000);
       // Avoid importing large amounts of data.
       if (!empty($items) && (count($items) >= $maxToImportSize)) {
+        $this->dataWrapper->setSkipOrphanReconciliation(TRUE);
+        $this->logger->warning('Max import per run (%number) reached; skipping orphan reconciliation this run to avoid false deletes.', ['%number' => $maxToImportSize]);
         $this->logger->warning('The maximum number of items: %number to import has been reached. 
           To increase it, change the settings for the "Max amount to import" per run field on the: %page_path page.', [
           '%number' => $maxToImportSize,
