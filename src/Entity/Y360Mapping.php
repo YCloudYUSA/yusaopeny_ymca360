@@ -89,11 +89,12 @@ class Y360Mapping extends ContentEntityBase {
 
     $fields = parent::baseFieldDefinitions($entity_type);
 
-    $fields['y360id'] = BaseFieldDefinition::create('integer')
+    $fields['y360id'] = BaseFieldDefinition::create('string')
       ->setLabel(t('YMCA360 ID'))
       ->setDescription(t('Used to map source YMCA360 ID.'))
       ->setRequired(TRUE)
       ->setSettings([
+        'max_length' => 64,
         'default_value' => '',
       ]);
 
