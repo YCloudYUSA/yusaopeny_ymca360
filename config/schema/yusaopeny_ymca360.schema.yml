@@ -1,0 +1,50 @@
+# Schema for the configuration files of the YMCA360 module.
+
+yusaopeny_ymca360.settings:
+  type: config_object
+  label: 'YMCA360 settings'
+  mapping:
+    api_url:
+      type: string
+      label: 'API URL'
+    credentials:
+      type: mapping
+      label: 'API credentials'
+      mapping:
+        user:
+          type: string
+          label: 'Username'
+        password:
+          type: string
+          label: 'Password'
+    schedule:
+      type: mapping
+      label: 'Schedule settings'
+      mapping:
+        schedules:
+          type: sequence
+          label: 'Schedules to sync'
+          sequence:
+            type: mapping
+            label: 'Schedule entry'
+            mapping:
+              enable:
+                type: boolean
+                label: 'Enable sync for this schedule'
+              subcategory:
+                type: integer
+                label: 'Local program subcategory node ID'
+    limit:
+      type: integer
+      label: 'Import limit (0 = no limit)'
+
+ymca_sync.settings:
+  type: config_object
+  label: 'YMCA Sync settings'
+  mapping:
+    active_syncers:
+      type: sequence
+      label: 'Active syncers'
+      sequence:
+        type: string
+        label: 'Syncer service ID'
